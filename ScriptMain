@@ -32,9 +32,11 @@ local ESPCleanup
 --==================================================
 
 local UPDATE = {
-    version = "v1.3",
+    version = "v1.4",
     date = "Oct 12, 2026",
     notes = {
+        { title = "Arsenal page", description = "Client-side gun mods: infinite ammo, instant reload, full auto, recoil and spread control." },
+        { title = "Defusal page", description = "Placeholder for now." },
         { title = "Player tab", description = "Speed boost, flight, noclip and third person camera." },
         { title = "Triggerbot (unfinished)", description = "Currently just presses left click when a target is under your aim point." },
         { title = "ESP and chams", description = "Names, distance, health and team colors on the Visuals tab." },
@@ -134,6 +136,10 @@ local PlayerTab = Window:CreateTab({ name = "Player", icon = 10686489468 })
 Window:CreateSection({ name = "Features" })
 local CombatTab = Window:CreateTab({ name = "Combat", icon = COMBAT_ICON })
 local VisualsTab = Window:CreateTab({ name = "Visuals", icon = 10686484299 })
+
+Window:CreateSection({ name = "Games" })
+local ArsenalTab = Window:CreateTab({ name = "Arsenal", icon = COMBAT_ICON })
+local DefusalTab = Window:CreateTab({ name = "Defusal", icon = COMBAT_ICON })
 
 Window:CreateSection({ name = "Menu" })
 local SettingsTab = Window:CreateTab({ name = "Settings", icon = SETTINGS_ICON })
@@ -1984,6 +1990,368 @@ do
 end
 
 --==================================================
+-- GAME PAGES  (Arsenal gun mods, Defusal placeholder)
+-- Everything here is CLIENT SIDE: it edits your local copy of
+-- ReplicatedStorage.Weapons. Nothing is sent to the server.
+--==================================================
+
+local ArsenalCleanup
+local ResetArsenalSettings
+
+do
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+    ------------------------------ tuning knobs
+    local AMMO_FILL = 9999                  -- value used for Ammo and StoredAmmo by "Infinite Ammo"
+    local MIN_TIME = 0.05                   -- seconds used by Instant Reload / Fast Equip (0 can break animations)
+    local FIRE_RATE_LOWER_IS_FASTER = true  -- FireRate is treated as seconds-between-shots; flip if guns get slower
+
+    local ArsenalDefaults = {
+        Enabled = false,
+        InfiniteAmmo = true,
+        InstantReload = true,
+        FastEquip = false,
+        FullAuto = true,
+        FireRateMult = 1,        -- x, 1 = untouched
+        RecoilPercent = 100,     -- % of original recoil, 100 = untouched
+        SpreadPercent = 100,     -- % of original spread, 100 = untouched
+        DamagePercent = 100,     -- % of original, 100 = untouched (the server may ignore this one)
+        RangePercent = 100,
+        FalloffPercent = 100,
+        BulletPercent = 100,     -- bullets per shot
+    }
+
+    local Settings = {}
+
+    for key, value in pairs(ArsenalDefaults) do
+        Settings[key] = value
+    end
+
+    local Controls = {}
+    local Originals = setmetatable({}, { __mode = "k" }) -- [ValueObject] = original value
+    local Dirty = true
+    local Cleaned = false
+    local LastReconcile = 0
+
+    local function GetWeapons()
+        return ReplicatedStorage:FindFirstChild("Weapons")
+    end
+
+    local function CountGuns()
+        local Folder = GetWeapons()
+        return Folder and #Folder:GetChildren() or 0
+    end
+
+    ------------------------------ stat engine
+    -- Writes a number/boolean into a BoolValue / NumberValue / IntValue safely.
+    local function SetStat(Object, Wanted)
+        local Class = Object.ClassName
+
+        if Class == "BoolValue" then
+            local Bool = Wanted == true or (type(Wanted) == "number" and Wanted ~= 0)
+
+            if Object.Value ~= Bool then
+                Object.Value = Bool
+            end
+        elseif Class == "NumberValue" or Class == "IntValue" then
+            local Number = Wanted
+
+            if type(Number) == "boolean" then
+                Number = Number and 1 or 0
+            end
+
+            if Class == "IntValue" then
+                Number = math.floor(Number + 0.5)
+            end
+
+            if Object.Value ~= Number then
+                Object.Value = Number
+            end
+        end
+    end
+
+    -- Stats that are scaled relative to the gun's original value.
+    local function Percent(Value)
+        if Value ~= 100 then
+            return Value / 100
+        end
+
+        return nil
+    end
+
+    local Scale = {
+        FireRate = {
+            Min = 0.01,
+            Factor = function()
+                if Settings.FireRateMult <= 1 then
+                    return nil
+                end
+
+                return FIRE_RATE_LOWER_IS_FASTER and (1 / Settings.FireRateMult) or Settings.FireRateMult
+            end,
+        },
+        RecoilControl = { Factor = function() return Percent(Settings.RecoilPercent) end },
+        Spread = { Factor = function() return Percent(Settings.SpreadPercent) end },
+        MaxSpread = { Factor = function() return Percent(Settings.SpreadPercent) end },
+        DMG = { Factor = function() return Percent(Settings.DamagePercent) end },
+        Range = { Factor = function() return Percent(Settings.RangePercent) end },
+        Falloff = { Factor = function() return Percent(Settings.FalloffPercent) end },
+        Bullets = { Min = 1, Factor = function() return Percent(Settings.BulletPercent) end },
+    }
+
+    -- What should this stat be right now? nil means "leave it alone / restore it".
+    local function Desired(Name, Original)
+        if not Settings.Enabled then
+            return nil
+        end
+
+        if (Name == "Ammo" or Name == "StoredAmmo") and Settings.InfiniteAmmo then
+            return AMMO_FILL
+        end
+
+        if Name == "ReloadTime" and Settings.InstantReload then
+            return MIN_TIME
+        end
+
+        if Name == "EquipTime" and Settings.FastEquip then
+            return MIN_TIME
+        end
+
+        if Name == "Auto" and Settings.FullAuto then
+            return true
+        end
+
+        local Rule = Scale[Name]
+
+        if Rule and type(Original) == "number" then
+            local Factor = Rule.Factor()
+
+            if Factor then
+                local Result = Original * Factor
+
+                if Rule.Min then
+                    Result = math.max(Rule.Min, Result)
+                end
+
+                return Result
+            end
+        end
+
+        return nil
+    end
+
+    -- Walks every gun, applies what is wanted, and restores anything no longer wanted.
+    local function Reconcile()
+        local Folder = GetWeapons()
+
+        if not Folder then
+            return
+        end
+
+        for _, Gun in ipairs(Folder:GetChildren()) do
+            for _, Stat in ipairs(Gun:GetChildren()) do
+                if Stat:IsA("ValueBase") then
+                    local Stored = Originals[Stat]
+                    local Original = Stored
+
+                    if Original == nil then
+                        Original = Stat.Value
+                    end
+
+                    local Wanted = Desired(Stat.Name, Original)
+
+                    if Wanted ~= nil then
+                        if Stored == nil then
+                            Originals[Stat] = Original
+                        end
+
+                        SetStat(Stat, Wanted)
+                    elseif Stored ~= nil then
+                        SetStat(Stat, Stored)
+                        Originals[Stat] = nil
+                    end
+                end
+            end
+        end
+    end
+
+    -- Re-checks every half second (some games rewrite stats) and instantly after any setting change.
+    table.insert(Connections, RunService.Heartbeat:Connect(function()
+        if Cleaned then
+            return
+        end
+
+        local Now = os.clock()
+
+        if not Dirty and Now - LastReconcile < 0.5 then
+            return
+        end
+
+        Dirty = false
+        LastReconcile = Now
+
+        if Settings.Enabled or next(Originals) then
+            pcall(Reconcile)
+        end
+    end))
+
+    ArsenalCleanup = function()
+        Cleaned = true
+        Settings.Enabled = false
+        pcall(Reconcile) -- puts every stat back
+    end
+
+    ------------------------------ UI helpers
+    local function ArsenalToggle(Key, Name, Description, DontSave)
+        Controls[Key] = ArsenalTab:CreateToggle({
+            name = Name,
+            description = Description,
+            flag = "Arsenal_" .. Key,
+            value = Settings[Key],
+            forgetState = DontSave == true,
+
+            callback = function(Value)
+                local Changed = Value ~= Settings[Key]
+                Settings[Key] = Value
+                Dirty = true
+
+                if Key == "Enabled" and Changed then
+                    Toast("Gun Mods", Value and "Enabled - re-equip your gun" or "Disabled")
+                end
+            end,
+        })
+    end
+
+    local function ArsenalSlider(Key, Name, Description, Range, Increment, Suffix)
+        Controls[Key] = ArsenalTab:CreateSlider({
+            name = Name,
+            description = Description,
+            flag = "Arsenal_" .. Key,
+            range = Range,
+            increment = Increment,
+            suffix = Suffix,
+            value = Settings[Key],
+
+            callback = function(Value)
+                Settings[Key] = Value
+                Dirty = true
+            end,
+        })
+    end
+
+    local function PrintWeaponStats()
+        local Folder = GetWeapons()
+
+        if not Folder then
+            Window:Notify({ title = "Arsenal", content = "ReplicatedStorage.Weapons was not found. Join Arsenal first." })
+            return
+        end
+
+        local Lines = {}
+
+        for _, Gun in ipairs(Folder:GetChildren()) do
+            local Parts = {}
+
+            for _, Stat in ipairs(Gun:GetChildren()) do
+                if Stat:IsA("NumberValue") or Stat:IsA("IntValue") or Stat:IsA("BoolValue") then
+                    local Text = Stat.Name .. "=" .. tostring(Stat.Value)
+
+                    if Originals[Stat] ~= nil then
+                        Text = Text .. " (orig " .. tostring(Originals[Stat]) .. ")"
+                    end
+
+                    table.insert(Parts, Text)
+                end
+            end
+
+            table.sort(Parts)
+            table.insert(Lines, Gun.Name .. ": " .. table.concat(Parts, ", "))
+        end
+
+        table.sort(Lines)
+        print("[Koda Hub] Weapon stats (" .. #Lines .. " guns)\n" .. table.concat(Lines, "\n"))
+
+        Window:Notify({
+            title = "Arsenal",
+            content = "Printed " .. #Lines .. " guns to the developer console (F9).",
+        })
+    end
+
+    ------------------------------ ARSENAL PAGE
+    ArsenalTab:CreateSection({ name = "Status" })
+
+    local GunCount = CountGuns()
+
+    ArsenalTab:CreateText({
+        name = GunCount > 0 and ("Weapons found: " .. GunCount) or "Weapons folder not found",
+        text = GunCount > 0
+            and "Client side only. Changes apply to your local copy of ReplicatedStorage.Weapons, so re-equip a gun after changing anything."
+            or "Join Arsenal and re-run the script. Nothing here does anything until ReplicatedStorage.Weapons exists.",
+    })
+
+    ArsenalTab:CreateSection({ name = "Gun Mods" })
+    ArsenalToggle("Enabled", "Enable Gun Mods", "Master switch. Turning it off restores every original stat. Always starts off.", true)
+    ArsenalToggle("InfiniteAmmo", "Infinite Ammo", "Sets Ammo and StoredAmmo to " .. AMMO_FILL .. " on every gun.")
+    ArsenalToggle("InstantReload", "Instant Reload", "ReloadTime drops to " .. MIN_TIME .. "s.")
+    ArsenalToggle("FastEquip", "Fast Equip", "EquipTime drops to " .. MIN_TIME .. "s.")
+    ArsenalToggle("FullAuto", "Full Auto", "Sets Auto to true on every gun.")
+
+    ArsenalTab:CreateSection({ name = "Fire Rate & Accuracy" })
+    ArsenalSlider("FireRateMult", "Fire Rate Multiplier", "1x leaves it alone.", { 1, 10 }, 0.5, "x")
+    ArsenalSlider("RecoilPercent", "Recoil", "100% leaves it alone, 0% is none. Scales RecoilControl.", { 0, 100 }, 5, "%")
+    ArsenalSlider("SpreadPercent", "Spread", "100% leaves it alone, 0% is a laser. Scales Spread and MaxSpread.", { 0, 100 }, 5, "%")
+
+    ArsenalTab:CreateSection({ name = "Damage & Range (server may ignore)" })
+    ArsenalSlider("DamagePercent", "Damage", "100% leaves it alone.", { 100, 1000 }, 25, "%")
+    ArsenalSlider("RangePercent", "Range", "100% leaves it alone.", { 100, 1000 }, 25, "%")
+    ArsenalSlider("FalloffPercent", "Damage Falloff", "Scales the Falloff stat. 100% leaves it alone.", { 0, 300 }, 10, "%")
+    ArsenalSlider("BulletPercent", "Bullets Per Shot", "Scales Bullets (pellets). 100% leaves it alone.", { 100, 1000 }, 50, "%")
+
+    ArsenalTab:CreateSection({ name = "Utilities" })
+
+    ArsenalTab:CreateButton({
+        name = "Print All Weapon Stats",
+        callback = PrintWeaponStats,
+    })
+
+    ArsenalTab:CreateButton({
+        name = "Restore Original Stats",
+        callback = function()
+            Controls.Enabled:Set(false)
+            Dirty = true
+
+            Window:Notify({ title = "Arsenal", content = "Original weapon stats restored." })
+        end,
+    })
+
+    ResetArsenalSettings = function()
+        for Key, Control in pairs(Controls) do
+            Control:Set(ArsenalDefaults[Key])
+            Settings[Key] = ArsenalDefaults[Key]
+        end
+
+        Dirty = true
+    end
+
+    ArsenalTab:CreateButton({
+        name = "Reset Arsenal Settings",
+        callback = function()
+            ResetArsenalSettings()
+
+            Window:Notify({ title = "Koda Hub", content = "Arsenal settings restored to defaults." })
+        end,
+    })
+
+    ------------------------------ DEFUSAL PAGE (placeholder)
+    DefusalTab:CreateSection({ name = "Status" })
+
+    DefusalTab:CreateText({
+        name = "Defusal",
+        text = "Nothing here yet. Send me the Defusal explorer layout (weapons, remotes, round values) and this page gets built the same way.",
+    })
+end
+
+--==================================================
 -- CLEANUP
 --==================================================
 
@@ -2010,6 +2378,7 @@ Cleanup = function()
 
     pcall(ESPCleanup)
     pcall(PlayerCleanup)
+    pcall(ArsenalCleanup)
 
     if Overlay then
         Overlay:Destroy()
@@ -2187,6 +2556,7 @@ SettingsTab:CreateButton({
                 ResetAimSettings()
                 ResetESPSettings()
                 ResetPlayerSettings()
+                ResetArsenalSettings()
                 Toast("Koda Hub", "Settings reset")
             end
         )

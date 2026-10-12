@@ -1,0 +1,2327 @@
+--==================================================
+-- KODA HUB | Rayfield Gen2
+-- Tabs: Home, Player, Combat, Visuals, Settings
+--==================================================
+
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+
+local Env = (getgenv and getgenv()) or _G
+local BIND_NAME = "KodaAimlock"
+local TEST_FOLDER_NAME = "AimTestTargets"
+local COMBAT_ICON = 10137967894 -- swap for a crosshair asset id if you have one
+local SETTINGS_ICON = 10137801077
+
+-- Re-running the script replaces the old instance instead of stacking a second one.
+if Env.KodaHubCleanup then
+    pcall(Env.KodaHubCleanup)
+end
+
+-- Forward declarations (assigned further down, used by buttons and cleanup)
+local Cleanup
+local ESPCleanup
+
+--==================================================
+-- UPDATE INFO  (edit this when you ship an update)
+--==================================================
+
+local UPDATE = {
+    version = "v1.3",
+    date = "Oct 12, 2026",
+    notes = {
+        { title = "Player tab", description = "Speed boost, flight, noclip and third person camera." },
+        { title = "Triggerbot (unfinished)", description = "Currently just presses left click when a target is under your aim point." },
+        { title = "ESP and chams", description = "Names, distance, health and team colors on the Visuals tab." },
+        { title = "Settings tab", description = "Themes, language, menu key, configs and reset options." },
+        { title = "Home page", description = "Welcome page with the latest update notes." },
+        { title = "Aimlock", description = "Sticky lock and adjustable lock strength." },
+    },
+}
+
+local MenuSettings = {
+    Toasts = true,
+}
+
+--==================================================
+-- TRANSLATIONS (English is the source; only list what changes)
+-- Option values such as "Hold" / "Toggle" / "Head" are NOT translated
+-- on purpose, because the script reads them back as plain strings.
+--==================================================
+
+local Translations = {
+    es = {
+        ["Home"] = "Inicio", ["Player"] = "Jugador", ["Combat"] = "Combate", ["Visuals"] = "Visuales",
+        ["Settings"] = "Ajustes", ["General"] = "General", ["Features"] = "Funciones", ["Menu"] = "Menú",
+        ["Welcome"] = "Bienvenido", ["Latest Update"] = "Última actualización",
+        ["Aiming"] = "Apuntado", ["Aim Settings"] = "Ajustes de apuntado", ["Targeting"] = "Objetivos",
+        ["Aim Visuals"] = "Visuales de apuntado", ["Utilities"] = "Utilidades", ["Targets"] = "Blancos",
+        ["Appearance"] = "Apariencia", ["Colors"] = "Colores",
+        ["Enable Aimlock"] = "Activar Aimlock", ["Enable ESP"] = "Activar ESP",
+        ["Names"] = "Nombres", ["Distance"] = "Distancia", ["Health"] = "Salud",
+        ["Team Check"] = "Verificar equipo", ["Alive Check"] = "Verificar vida",
+        ["Sticky Lock"] = "Bloqueo fijo", ["Show Teammates"] = "Mostrar compañeros",
+        ["Team Colors"] = "Colores de equipo", ["Lock Strength"] = "Fuerza de bloqueo",
+        ["FOV Radius"] = "Radio de FOV", ["Maximum Distance"] = "Distancia máxima",
+        ["Target Part"] = "Parte objetivo", ["Text Size"] = "Tamaño de texto",
+        ["Theme"] = "Tema", ["Language"] = "Idioma", ["Menu Toggle Key"] = "Tecla del menú",
+        ["Unload Script"] = "Descargar script", ["Save Config"] = "Guardar config", ["Load Config"] = "Cargar config",
+    },
+    fr = {
+        ["Home"] = "Accueil", ["Player"] = "Joueur", ["Combat"] = "Combat", ["Visuals"] = "Visuels",
+        ["Settings"] = "Paramètres", ["General"] = "Général", ["Features"] = "Fonctions", ["Menu"] = "Menu",
+        ["Welcome"] = "Bienvenue", ["Latest Update"] = "Dernière mise à jour",
+        ["Aiming"] = "Visée", ["Aim Settings"] = "Réglages de visée", ["Targeting"] = "Ciblage",
+        ["Aim Visuals"] = "Visuels de visée", ["Utilities"] = "Utilitaires", ["Targets"] = "Cibles",
+        ["Appearance"] = "Apparence", ["Colors"] = "Couleurs",
+        ["Enable Aimlock"] = "Activer l'Aimlock", ["Enable ESP"] = "Activer l'ESP",
+        ["Names"] = "Noms", ["Distance"] = "Distance", ["Health"] = "Santé",
+        ["Team Check"] = "Vérif. d'équipe", ["Alive Check"] = "Vérif. de vie",
+        ["Sticky Lock"] = "Verrouillage collant", ["Show Teammates"] = "Afficher les coéquipiers",
+        ["Team Colors"] = "Couleurs d'équipe", ["Lock Strength"] = "Force du verrouillage",
+        ["FOV Radius"] = "Rayon du FOV", ["Maximum Distance"] = "Distance maximale",
+        ["Target Part"] = "Partie ciblée", ["Text Size"] = "Taille du texte",
+        ["Theme"] = "Thème", ["Language"] = "Langue", ["Menu Toggle Key"] = "Touche du menu",
+        ["Unload Script"] = "Décharger le script", ["Save Config"] = "Enregistrer la config", ["Load Config"] = "Charger la config",
+    },
+    de = {
+        ["Home"] = "Start", ["Player"] = "Spieler", ["Combat"] = "Kampf", ["Visuals"] = "Visuals",
+        ["Settings"] = "Einstellungen", ["General"] = "Allgemein", ["Features"] = "Funktionen", ["Menu"] = "Menü",
+        ["Welcome"] = "Willkommen", ["Latest Update"] = "Neuestes Update",
+        ["Aiming"] = "Zielen", ["Aim Settings"] = "Ziel-Einstellungen", ["Targeting"] = "Zielauswahl",
+        ["Aim Visuals"] = "Ziel-Visuals", ["Utilities"] = "Werkzeuge", ["Targets"] = "Ziele",
+        ["Appearance"] = "Aussehen", ["Colors"] = "Farben",
+        ["Enable Aimlock"] = "Aimlock aktivieren", ["Enable ESP"] = "ESP aktivieren",
+        ["Names"] = "Namen", ["Distance"] = "Entfernung", ["Health"] = "Gesundheit",
+        ["Team Check"] = "Teamprüfung", ["Alive Check"] = "Lebendprüfung",
+        ["Sticky Lock"] = "Feste Sperre", ["Show Teammates"] = "Teammitglieder zeigen",
+        ["Team Colors"] = "Teamfarben", ["Lock Strength"] = "Sperrstärke",
+        ["FOV Radius"] = "FOV-Radius", ["Maximum Distance"] = "Maximale Entfernung",
+        ["Target Part"] = "Zielteil", ["Text Size"] = "Textgröße",
+        ["Theme"] = "Design", ["Language"] = "Sprache", ["Menu Toggle Key"] = "Menütaste",
+        ["Unload Script"] = "Skript entladen", ["Save Config"] = "Konfig speichern", ["Load Config"] = "Konfig laden",
+    },
+}
+
+--==================================================
+-- WINDOW + TABS
+--==================================================
+
+local Window = Rayfield:CreateWindow({
+    name = "Koda Hub",
+    subtitle = "Early Access",
+    profile = "Early Access",
+    showName = "Koda Hub",
+    sidebarLayout = true,
+    theme = "cobalt",
+    translations = Translations,
+    configuration = {
+        autoSave = true,
+        autoLoad = true,
+        fileName = "KodaHub",
+    },
+})
+
+Window:CreateSection({ name = "General" })
+local HomeTab = Window:CreateTab({ name = "Home", icon = 93364949241311 })
+local PlayerTab = Window:CreateTab({ name = "Player", icon = 10686489468 })
+
+Window:CreateSection({ name = "Features" })
+local CombatTab = Window:CreateTab({ name = "Combat", icon = COMBAT_ICON })
+local VisualsTab = Window:CreateTab({ name = "Visuals", icon = 10686484299 })
+
+Window:CreateSection({ name = "Menu" })
+local SettingsTab = Window:CreateTab({ name = "Settings", icon = SETTINGS_ICON })
+
+-- Quick, low-weight confirmation. Respects the "Toast Notifications" setting.
+local function Toast(Title, Subtitle)
+    if not MenuSettings.Toasts then
+        return
+    end
+
+    pcall(function()
+        Window:Toast({ title = Title, subtitle = Subtitle, duration = 2 })
+    end)
+end
+
+--==================================================
+-- TAGS  (version pill + live aimlock status pill)
+--==================================================
+
+pcall(function()
+    Window:CreateTag({
+        text = UPDATE.version,
+        color = Color3.fromRGB(65, 150, 255),
+        order = 0,
+    })
+end)
+
+local STATUS_COLORS = {
+    Idle = Color3.fromRGB(110, 118, 135),
+    Ready = Color3.fromRGB(80, 200, 120),
+    Locked = Color3.fromRGB(255, 75, 75),
+}
+
+local StatusTag = nil
+local LastStatus = nil
+
+pcall(function()
+    StatusTag = Window:CreateTag({
+        text = "Idle",
+        color = STATUS_COLORS.Idle,
+        order = 1,
+    })
+    LastStatus = "Idle"
+end)
+
+local function SetStatus(Name)
+    if not StatusTag or Name == LastStatus then
+        return
+    end
+
+    LastStatus = Name
+
+    pcall(function()
+        StatusTag:Set({ text = Name, color = STATUS_COLORS[Name] })
+    end)
+end
+
+--==================================================
+-- HOME TAB
+--==================================================
+
+local function ShowChangelog()
+    local Boxes = {}
+
+    for _, Note in ipairs(UPDATE.notes) do
+        table.insert(Boxes, { title = Note.title, description = Note.description })
+    end
+
+    pcall(function()
+        Window:Popup({
+            title = "What's new",
+            subtitle = UPDATE.version .. "  -  " .. UPDATE.date,
+            boxes = Boxes,
+            options = { { text = "Got it", style = "primary" } },
+        })
+    end)
+end
+
+HomeTab:CreateSection({ name = "Welcome" })
+
+HomeTab:CreateText({
+    name = "Welcome to Koda Hub",
+    text = "Pick a tab on the left to get started. Combat has the aimlock, Visuals has the ESP, and Settings controls the menu itself.",
+})
+
+HomeTab:CreateSection({ name = "Latest Update" })
+
+local UpdateLines = {}
+
+for _, Note in ipairs(UPDATE.notes) do
+    table.insert(UpdateLines, "- " .. Note.title .. ": " .. Note.description)
+end
+
+HomeTab:CreateText({
+    name = UPDATE.version .. "  -  " .. UPDATE.date,
+    text = table.concat(UpdateLines, "\n"),
+})
+
+local HomeRow = HomeTab:CreateGroup()
+
+HomeRow:CreateButton({
+    name = "View Changelog",
+    callback = ShowChangelog,
+})
+
+HomeRow:CreateButton({
+    name = "Open Combat",
+    callback = function()
+        Window:Navigate(CombatTab)
+    end,
+})
+
+HomeRow:CreateButton({
+    name = "Open Visuals",
+    callback = function()
+        Window:Navigate(VisualsTab)
+    end,
+})
+
+--==================================================
+-- SETTINGS (combat)
+--==================================================
+
+local Defaults = {
+    Enabled = false,
+    AimOnHold = true,
+    AimKey = Enum.UserInputType.MouseButton2,
+    LockStrength = 100, -- 100 = hard lock, lower = smoother glide
+    TargetPart = "Head",
+    StickyLock = true, -- keep the same target until the key is released
+    FOV = 120,
+    MaxDistance = 1000,
+    TargetPlayers = true,
+    TargetNPCs = true, -- models inside workspace.AimTestTargets
+    TeamCheck = true,
+    AliveCheck = true,
+    LineOfSight = false,
+    ShowFOV = true,
+    ShowTarget = true,
+    ShowTargetName = true,
+}
+
+local AimSettings = {}
+
+for key, value in pairs(Defaults) do
+    AimSettings[key] = value
+end
+
+local AimHeld = false
+local AimToggleActive = false
+local CurrentTarget = nil
+local CurrentTargetPart = nil
+local TargetLocked = false
+
+local Connections = {}
+
+--==================================================
+-- OVERLAY GUI
+--==================================================
+
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local ExistingOverlay = PlayerGui:FindFirstChild("KodaAimOverlay")
+
+if ExistingOverlay then
+    ExistingOverlay:Destroy()
+end
+
+local Overlay = Instance.new("ScreenGui")
+Overlay.Name = "KodaAimOverlay"
+Overlay.IgnoreGuiInset = true
+Overlay.ResetOnSpawn = false
+Overlay.DisplayOrder = 100
+Overlay.Parent = PlayerGui
+
+local FOVCircle = Instance.new("Frame")
+FOVCircle.Name = "FOVCircle"
+FOVCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+FOVCircle.BackgroundTransparency = 1
+FOVCircle.BorderSizePixel = 0
+FOVCircle.Size = UDim2.fromOffset(AimSettings.FOV * 2, AimSettings.FOV * 2)
+FOVCircle.Visible = false
+FOVCircle.Parent = Overlay
+
+local FOVCorner = Instance.new("UICorner")
+FOVCorner.CornerRadius = UDim.new(1, 0)
+FOVCorner.Parent = FOVCircle
+
+local FOVStroke = Instance.new("UIStroke")
+FOVStroke.Thickness = 1.5
+FOVStroke.Color = Color3.fromRGB(65, 150, 255)
+FOVStroke.Transparency = 0.1
+FOVStroke.Parent = FOVCircle
+
+local TargetMarker = Instance.new("Frame")
+TargetMarker.Name = "TargetMarker"
+TargetMarker.AnchorPoint = Vector2.new(0.5, 0.5)
+TargetMarker.Size = UDim2.fromOffset(20, 20)
+TargetMarker.BackgroundTransparency = 1
+TargetMarker.BorderSizePixel = 0
+TargetMarker.Visible = false
+TargetMarker.Parent = Overlay
+
+local MarkerCorner = Instance.new("UICorner")
+MarkerCorner.CornerRadius = UDim.new(1, 0)
+MarkerCorner.Parent = TargetMarker
+
+local MarkerStroke = Instance.new("UIStroke")
+MarkerStroke.Thickness = 2
+MarkerStroke.Color = Color3.fromRGB(255, 255, 255)
+MarkerStroke.Parent = TargetMarker
+
+local TargetName = Instance.new("TextLabel")
+TargetName.Name = "TargetName"
+TargetName.AnchorPoint = Vector2.new(0.5, 0)
+TargetName.Position = UDim2.new(0.5, 0, 1, 6)
+TargetName.Size = UDim2.fromOffset(200, 24)
+TargetName.BackgroundColor3 = Color3.fromRGB(15, 18, 25)
+TargetName.BackgroundTransparency = 0.15
+TargetName.BorderSizePixel = 0
+TargetName.Font = Enum.Font.GothamMedium
+TargetName.TextSize = 12
+TargetName.TextColor3 = Color3.fromRGB(230, 240, 255)
+TargetName.Text = ""
+TargetName.Visible = false
+TargetName.Parent = TargetMarker
+
+local NameCorner = Instance.new("UICorner")
+NameCorner.CornerRadius = UDim.new(0, 5)
+NameCorner.Parent = TargetName
+
+local PREVIEW_COLOR = Color3.fromRGB(255, 255, 255)
+local LOCKED_COLOR = Color3.fromRGB(255, 75, 75)
+
+--==================================================
+-- TARGET HELPERS
+--==================================================
+
+local function ClearTarget()
+    CurrentTarget = nil
+    CurrentTargetPart = nil
+    TargetLocked = false
+end
+
+local function GetTestFolder()
+    return Workspace:FindFirstChild(TEST_FOLDER_NAME)
+end
+
+-- Every model we are allowed to aim at: other players + NPC test dummies.
+local function GetCandidates()
+    local List = {}
+
+    if AimSettings.TargetPlayers then
+        for _, Player in ipairs(Players:GetPlayers()) do
+            local Character = Player.Character
+
+            if Player ~= LocalPlayer and Character then
+                table.insert(List, Character)
+            end
+        end
+    end
+
+    if AimSettings.TargetNPCs then
+        local Folder = GetTestFolder()
+
+        if Folder then
+            for _, Child in ipairs(Folder:GetChildren()) do
+                if Child:IsA("Model") then
+                    table.insert(List, Child)
+                end
+            end
+        end
+    end
+
+    return List
+end
+
+local function GetTargetPart(Model)
+    local Name = AimSettings.TargetPart
+    local Part = Model:FindFirstChild(Name)
+
+    -- R6 rigs have no UpperTorso
+    if not Part and Name == "UpperTorso" then
+        Part = Model:FindFirstChild("Torso")
+    end
+
+    if not Part and Name == "HumanoidRootPart" then
+        Part = Model.PrimaryPart
+    end
+
+    if not Part then
+        Part = Model:FindFirstChild(Name, true)
+    end
+
+    -- last resort so the lock never silently fails on odd rigs
+    if not Part then
+        Part = Model:FindFirstChild("HumanoidRootPart") or Model.PrimaryPart
+    end
+
+    if Part and Part:IsA("BasePart") then
+        return Part
+    end
+
+    return nil
+end
+
+local function IsAlive(Model)
+    local Humanoid = Model:FindFirstChildOfClass("Humanoid")
+
+    if not Humanoid then
+        return false
+    end
+
+    if AimSettings.AliveCheck and Humanoid.Health <= 0 then
+        return false
+    end
+
+    return true
+end
+
+local function PassesTeamCheck(Model)
+    if not AimSettings.TeamCheck then
+        return true
+    end
+
+    local Owner = Players:GetPlayerFromCharacter(Model)
+
+    if Owner then
+        local MyTeam = LocalPlayer.Team
+
+        -- no teams in the game (or you are neutral) means everyone is fair game
+        return MyTeam == nil or Owner.Team ~= MyTeam
+    end
+
+    -- NPCs: "Team" attribute or a StringValue called "Team"
+    local TargetTeam = Model:GetAttribute("Team")
+
+    if not TargetTeam then
+        local TeamValue = Model:FindFirstChild("Team")
+
+        if TeamValue and TeamValue:IsA("StringValue") then
+            TargetTeam = TeamValue.Value
+        end
+    end
+
+    if LocalPlayer.Team and TargetTeam then
+        if tostring(TargetTeam) == LocalPlayer.Team.Name then
+            return false
+        end
+    end
+
+    return true
+end
+
+local RayParams = RaycastParams.new()
+RayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+local function HasLineOfSight(Model, Part)
+    if not AimSettings.LineOfSight then
+        return true
+    end
+
+    local Camera = Workspace.CurrentCamera
+
+    if not Camera then
+        return false
+    end
+
+    local Character = LocalPlayer.Character
+    RayParams.FilterDescendantsInstances = Character and { Character } or {}
+
+    local Origin = Camera.CFrame.Position
+    local Result = Workspace:Raycast(Origin, Part.Position - Origin, RayParams)
+
+    return Result == nil or Result.Instance:IsDescendantOf(Model)
+end
+
+local function GetOrigin()
+    local Character = LocalPlayer.Character
+    local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+
+    if Root and Root:IsA("BasePart") then
+        return Root.Position
+    end
+
+    local Camera = Workspace.CurrentCamera
+
+    return Camera and Camera.CFrame.Position or nil
+end
+
+local function GetScreenPosition(Part)
+    local Camera = Workspace.CurrentCamera
+
+    if not Camera then
+        return nil, false
+    end
+
+    local Point, OnScreen = Camera:WorldToViewportPoint(Part.Position)
+
+    return Vector2.new(Point.X, Point.Y), OnScreen and Point.Z > 0
+end
+
+-- Alive / team / distance checks shared by target acquisition and lock validation.
+local function GetCandidatePart(Model)
+    if not Model.Parent then
+        return nil
+    end
+
+    if not IsAlive(Model) or not PassesTeamCheck(Model) then
+        return nil
+    end
+
+    local Part = GetTargetPart(Model)
+    local Origin = GetOrigin()
+
+    if not Part or not Origin then
+        return nil
+    end
+
+    if (Part.Position - Origin).Magnitude > AimSettings.MaxDistance then
+        return nil
+    end
+
+    return Part
+end
+
+-- Closest eligible target to the cursor, inside the FOV circle.
+local function GetClosestTarget()
+    local MousePosition = UserInputService:GetMouseLocation()
+    local BestDistance = AimSettings.FOV
+    local BestModel = nil
+    local BestPart = nil
+
+    for _, Model in ipairs(GetCandidates()) do
+        local Part = GetCandidatePart(Model)
+
+        if Part then
+            local ScreenPosition, OnScreen = GetScreenPosition(Part)
+
+            if OnScreen and ScreenPosition then
+                local ScreenDistance = (ScreenPosition - MousePosition).Magnitude
+
+                -- raycast last, only for a target that would actually win
+                if ScreenDistance <= BestDistance and HasLineOfSight(Model, Part) then
+                    BestDistance = ScreenDistance
+                    BestModel = Model
+                    BestPart = Part
+                end
+            end
+        end
+    end
+
+    return BestModel, BestPart
+end
+
+-- A locked target stays locked even if it leaves the FOV circle,
+-- but it is dropped the moment it dies, leaves, or breaks a check.
+local function ValidateLockedTarget(Model)
+    local Part = GetCandidatePart(Model)
+
+    if Part and HasLineOfSight(Model, Part) then
+        return Part
+    end
+
+    return nil
+end
+
+--==================================================
+-- INPUT
+--==================================================
+
+local function NormalizeKey(Key)
+    if typeof(Key) == "EnumItem" then
+        return Key
+    end
+
+    if type(Key) == "string" then
+        local Ok, Item = pcall(function()
+            return Enum.KeyCode[Key]
+        end)
+
+        if Ok and Item then
+            return Item
+        end
+
+        Ok, Item = pcall(function()
+            return Enum.UserInputType[Key]
+        end)
+
+        if Ok and Item then
+            return Item
+        end
+    end
+
+    return nil
+end
+
+local function MatchesAimKey(Input)
+    local Key = AimSettings.AimKey
+
+    if not Key then
+        return false
+    end
+
+    return Input.KeyCode == Key or Input.UserInputType == Key
+end
+
+table.insert(Connections, UserInputService.InputBegan:Connect(function(Input)
+    if UserInputService:GetFocusedTextBox() then
+        return
+    end
+
+    if MatchesAimKey(Input) then
+        TargetLocked = false -- every press starts a fresh lock
+
+        if AimSettings.AimOnHold then
+            AimHeld = true
+        else
+            AimToggleActive = not AimToggleActive
+        end
+    end
+end))
+
+table.insert(Connections, UserInputService.InputEnded:Connect(function(Input)
+    if MatchesAimKey(Input) and AimSettings.AimOnHold then
+        AimHeld = false
+        TargetLocked = false
+    end
+end))
+
+local function IsAimActive()
+    if not AimSettings.Enabled then
+        return false
+    end
+
+    if AimSettings.AimOnHold then
+        return AimHeld
+    end
+
+    return AimToggleActive
+end
+
+--==================================================
+-- COMBAT TAB
+--==================================================
+
+------------------------------ Aiming
+CombatTab:CreateSection({ name = "Aiming" })
+
+local AimToggle = CombatTab:CreateToggle({
+    name = "Enable Aimlock",
+    description = "Locks your camera onto the closest target inside the FOV circle.",
+    flag = "AimAssist",
+    value = AimSettings.Enabled,
+    forgetState = true, -- always starts off, so you never join a game already locked on
+
+    callback = function(Value)
+        local Changed = Value ~= AimSettings.Enabled
+        AimSettings.Enabled = Value
+
+        if not Value then
+            AimToggleActive = false
+            ClearTarget()
+        end
+
+        if Changed then
+            Toast("Aimlock", Value and "Enabled" or "Disabled")
+        end
+    end,
+})
+
+local AimKey = CombatTab:CreateKeybind({
+    name = "Aim Activation Key",
+    flag = "AimActivationKey",
+    value = AimSettings.AimKey,
+
+    callback = function()
+        -- InputBegan / InputEnded handle activation so Hold and Toggle share one path.
+    end,
+
+    onChanged = function(Key)
+        AimSettings.AimKey = NormalizeKey(Key)
+        AimHeld = false
+        AimToggleActive = false
+    end,
+})
+
+local AimMode = CombatTab:CreateDropdown({
+    name = "Activation Mode",
+    description = "Hold the key to lock, or press it once to switch the lock on and off.",
+    flag = "AimActivationMode",
+    options = { "Hold", "Toggle" },
+    value = "Hold",
+
+    callback = function(Value)
+        AimSettings.AimOnHold = Value == "Hold"
+        AimHeld = false
+        AimToggleActive = false
+    end,
+})
+
+------------------------------ Aim Settings
+CombatTab:CreateSection({ name = "Aim Settings" })
+
+local StrengthSlider = CombatTab:CreateSlider({
+    name = "Lock Strength",
+    description = "100% is a hard lock. Lower values glide onto the target.",
+    flag = "AimSmoothness",
+    range = { 1, 100 },
+    increment = 1,
+    suffix = "%",
+    value = AimSettings.LockStrength,
+
+    callback = function(Value)
+        AimSettings.LockStrength = Value
+    end,
+})
+
+local TargetPartDropdown = CombatTab:CreateDropdown({
+    name = "Target Part",
+    flag = "AimTargetPart",
+    options = { "Head", "UpperTorso", "HumanoidRootPart" },
+    value = AimSettings.TargetPart,
+
+    callback = function(Value)
+        AimSettings.TargetPart = Value
+    end,
+})
+
+local StickyToggle = CombatTab:CreateToggle({
+    name = "Sticky Lock",
+    description = "Stay on the same target until you release the key.",
+    flag = "AimStickyLock",
+    value = AimSettings.StickyLock,
+
+    callback = function(Value)
+        AimSettings.StickyLock = Value
+    end,
+})
+
+local FOVSlider = CombatTab:CreateSlider({
+    name = "FOV Radius",
+    flag = "AimFOV",
+    range = { 20, 500 },
+    increment = 5,
+    suffix = "px",
+    value = AimSettings.FOV,
+
+    callback = function(Value)
+        AimSettings.FOV = Value
+    end,
+})
+
+local DistanceSlider = CombatTab:CreateSlider({
+    name = "Maximum Distance",
+    flag = "AimMaxDistance",
+    range = { 50, 2000 },
+    increment = 50,
+    suffix = " studs",
+    value = AimSettings.MaxDistance,
+
+    callback = function(Value)
+        AimSettings.MaxDistance = Value
+    end,
+})
+
+------------------------------ Targeting
+CombatTab:CreateSection({ name = "Targeting" })
+
+local TargetPlayersToggle = CombatTab:CreateToggle({
+    name = "Target Players",
+    flag = "AimTargetPlayers",
+    value = AimSettings.TargetPlayers,
+
+    callback = function(Value)
+        AimSettings.TargetPlayers = Value
+        ClearTarget()
+    end,
+})
+
+local TargetNPCsToggle = CombatTab:CreateToggle({
+    name = "Target NPC Dummies",
+    description = "Models inside workspace." .. TEST_FOLDER_NAME .. ".",
+    flag = "AimTargetNPCs",
+    value = AimSettings.TargetNPCs,
+
+    callback = function(Value)
+        AimSettings.TargetNPCs = Value
+        ClearTarget()
+    end,
+})
+
+local TeamCheckToggle = CombatTab:CreateToggle({
+    name = "Team Check",
+    description = "Skip teammates. Turn this off if every player shares one team.",
+    flag = "AimTeamCheck",
+    value = AimSettings.TeamCheck,
+
+    callback = function(Value)
+        AimSettings.TeamCheck = Value
+    end,
+})
+
+local AliveCheckToggle = CombatTab:CreateToggle({
+    name = "Alive Check",
+    flag = "AimAliveCheck",
+    value = AimSettings.AliveCheck,
+
+    callback = function(Value)
+        AimSettings.AliveCheck = Value
+    end,
+})
+
+local LineOfSightToggle = CombatTab:CreateToggle({
+    name = "Line Of Sight",
+    description = "Only lock onto targets you can actually see.",
+    flag = "AimLineOfSight",
+    value = AimSettings.LineOfSight,
+
+    callback = function(Value)
+        AimSettings.LineOfSight = Value
+    end,
+})
+
+------------------------------ Visuals
+CombatTab:CreateSection({ name = "Aim Visuals" })
+
+local ShowFOVToggle = CombatTab:CreateToggle({
+    name = "Show FOV Circle",
+    flag = "VisualShowFOV",
+    value = AimSettings.ShowFOV,
+
+    callback = function(Value)
+        AimSettings.ShowFOV = Value
+    end,
+})
+
+local ShowTargetToggle = CombatTab:CreateToggle({
+    name = "Target Indicator",
+    description = "White while previewing, red once locked on.",
+    flag = "VisualShowTarget",
+    value = AimSettings.ShowTarget,
+
+    callback = function(Value)
+        AimSettings.ShowTarget = Value
+    end,
+})
+
+local ShowNameToggle = CombatTab:CreateToggle({
+    name = "Target Name",
+    flag = "VisualShowName",
+    value = AimSettings.ShowTargetName,
+
+    callback = function(Value)
+        AimSettings.ShowTargetName = Value
+    end,
+})
+
+------------------------------ Triggerbot (UNFINISHED)
+local ResetTriggerSettings
+
+do
+    local TriggerDefaults = {
+        Enabled = false,
+        AimPoint = "Screen Center", -- or "Cursor"
+        Delay = 0,                  -- ms the target must stay under the aim point before the first click
+        Interval = 100,             -- ms between clicks while still on target
+        Range = 500,                -- studs
+    }
+
+    local TriggerSettings = {}
+
+    for key, value in pairs(TriggerDefaults) do
+        TriggerSettings[key] = value
+    end
+
+    local TriggerControls = {}
+    local TriggerParams = RaycastParams.new()
+    TriggerParams.FilterType = Enum.RaycastFilterType.Exclude
+
+    local TriggerSeenAt = nil
+    local TriggerLastShot = 0
+
+    -- Fires ONE left click. Uses the executor's mouse1click when it exists,
+    -- otherwise falls back to VirtualInputManager at the current cursor position.
+    local function TriggerClick()
+        if type(mouse1click) == "function" then
+            mouse1click()
+            return
+        end
+
+        pcall(function()
+            local VIM = game:GetService("VirtualInputManager")
+            local Position = UserInputService:GetMouseLocation()
+
+            VIM:SendMouseButtonEvent(Position.X, Position.Y, 0, true, game, 0)
+            VIM:SendMouseButtonEvent(Position.X, Position.Y, 0, false, game, 0)
+        end)
+    end
+
+    -- Returns the valid target model under the aim point, or nil.
+    -- Walls block the ray, so it only fires at things you can actually hit.
+    local function GetTriggerTarget()
+        local Camera = Workspace.CurrentCamera
+
+        if not Camera then
+            return nil
+        end
+
+        local Point
+
+        if TriggerSettings.AimPoint == "Cursor" then
+            Point = UserInputService:GetMouseLocation()
+        else
+            Point = Camera.ViewportSize / 2
+        end
+
+        local Ray = Camera:ViewportPointToRay(Point.X, Point.Y)
+        local Character = LocalPlayer.Character
+        TriggerParams.FilterDescendantsInstances = Character and { Character } or {}
+
+        local Result = Workspace:Raycast(Ray.Origin, Ray.Direction * TriggerSettings.Range, TriggerParams)
+
+        if not Result then
+            return nil
+        end
+
+        -- walk up from the part that was hit to the model that owns a Humanoid
+        local Model = Result.Instance:FindFirstAncestorOfClass("Model")
+
+        while Model and not Model:FindFirstChildOfClass("Humanoid") do
+            Model = Model:FindFirstAncestorOfClass("Model")
+        end
+
+        if not Model then
+            return nil
+        end
+
+        local Humanoid = Model:FindFirstChildOfClass("Humanoid")
+
+        if not Humanoid or Humanoid.Health <= 0 then
+            return nil
+        end
+
+        -- same target rules as the aimlock (Target Players / Target NPC Dummies / Team Check)
+        local Owner = Players:GetPlayerFromCharacter(Model)
+
+        if Owner then
+            if Owner == LocalPlayer or not AimSettings.TargetPlayers then
+                return nil
+            end
+        else
+            local Folder = GetTestFolder()
+
+            if not AimSettings.TargetNPCs or not Folder or Model.Parent ~= Folder then
+                return nil
+            end
+        end
+
+        if not PassesTeamCheck(Model) then
+            return nil
+        end
+
+        return Model
+    end
+
+    local function UpdateTrigger()
+        if not TriggerSettings.Enabled or UserInputService:GetFocusedTextBox() then
+            TriggerSeenAt = nil
+            return
+        end
+
+        if not GetTriggerTarget() then
+            TriggerSeenAt = nil
+            return
+        end
+
+        local Now = os.clock()
+
+        if not TriggerSeenAt then
+            TriggerSeenAt = Now
+        end
+
+        if Now - TriggerSeenAt < TriggerSettings.Delay / 1000 then
+            return
+        end
+
+        if Now - TriggerLastShot < TriggerSettings.Interval / 1000 then
+            return
+        end
+
+        TriggerLastShot = Now
+        TriggerClick()
+    end
+
+    -- Cleanup() disconnects everything in Connections, so this stops on unload too.
+    table.insert(Connections, RunService.Heartbeat:Connect(UpdateTrigger))
+
+    ------------------ UI
+    CombatTab:CreateSection({ name = "Triggerbot (Unfinished)" })
+
+    CombatTab:CreateText({
+        name = "Unfinished",
+        text = "Triggerbot is unfinished. For now it only presses left click when a valid target is under your aim point. It follows the Targeting toggles and Team Check above.",
+    })
+
+    TriggerControls.Enabled = CombatTab:CreateToggle({
+        name = "Enable Triggerbot",
+        description = "Unfinished - currently just presses left click.",
+        flag = "TriggerEnabled",
+        value = TriggerSettings.Enabled,
+        forgetState = true, -- always starts off
+
+        callback = function(Value)
+            local Changed = Value ~= TriggerSettings.Enabled
+            TriggerSettings.Enabled = Value
+            TriggerSeenAt = nil
+
+            if Changed then
+                Toast("Triggerbot", Value and "Enabled (unfinished)" or "Disabled")
+            end
+        end,
+    })
+
+    TriggerControls.AimPoint = CombatTab:CreateDropdown({
+        name = "Trigger Aim Point",
+        description = "Screen Center suits locked-mouse shooters. Cursor follows your mouse.",
+        flag = "TriggerAimPoint",
+        options = { "Screen Center", "Cursor" },
+        value = TriggerSettings.AimPoint,
+
+        callback = function(Value)
+            TriggerSettings.AimPoint = Value
+        end,
+    })
+
+    TriggerControls.Delay = CombatTab:CreateSlider({
+        name = "Trigger Delay",
+        flag = "TriggerDelay",
+        range = { 0, 500 },
+        increment = 10,
+        suffix = " ms",
+        value = TriggerSettings.Delay,
+
+        callback = function(Value)
+            TriggerSettings.Delay = Value
+        end,
+    })
+
+    TriggerControls.Interval = CombatTab:CreateSlider({
+        name = "Click Interval",
+        description = "Time between clicks while you stay on target.",
+        flag = "TriggerInterval",
+        range = { 50, 1000 },
+        increment = 10,
+        suffix = " ms",
+        value = TriggerSettings.Interval,
+
+        callback = function(Value)
+            TriggerSettings.Interval = Value
+        end,
+    })
+
+    TriggerControls.Range = CombatTab:CreateSlider({
+        name = "Trigger Range",
+        flag = "TriggerRange",
+        range = { 50, 2000 },
+        increment = 50,
+        suffix = " studs",
+        value = TriggerSettings.Range,
+
+        callback = function(Value)
+            TriggerSettings.Range = Value
+        end,
+    })
+
+    ResetTriggerSettings = function()
+        for Key, Control in pairs(TriggerControls) do
+            Control:Set(TriggerDefaults[Key])
+            TriggerSettings[Key] = TriggerDefaults[Key]
+        end
+
+        TriggerSeenAt = nil
+    end
+end
+
+------------------------------ Reset helper (also used by Settings tab)
+local function ResetAimSettings()
+    -- Set() fires each element's callback, which updates AimSettings.
+    AimToggle:Set(Defaults.Enabled)
+    AimMode:Set("Hold")
+    AimKey:Set(Defaults.AimKey)
+    StrengthSlider:Set(Defaults.LockStrength)
+    TargetPartDropdown:Set(Defaults.TargetPart)
+    StickyToggle:Set(Defaults.StickyLock)
+    FOVSlider:Set(Defaults.FOV)
+    DistanceSlider:Set(Defaults.MaxDistance)
+
+    TargetPlayersToggle:Set(Defaults.TargetPlayers)
+    TargetNPCsToggle:Set(Defaults.TargetNPCs)
+    TeamCheckToggle:Set(Defaults.TeamCheck)
+    AliveCheckToggle:Set(Defaults.AliveCheck)
+    LineOfSightToggle:Set(Defaults.LineOfSight)
+
+    ShowFOVToggle:Set(Defaults.ShowFOV)
+    ShowTargetToggle:Set(Defaults.ShowTarget)
+    ShowNameToggle:Set(Defaults.ShowTargetName)
+    ResetTriggerSettings()
+
+    -- Belt and braces: make sure the live table matches the defaults.
+    for key, value in pairs(Defaults) do
+        AimSettings[key] = value
+    end
+
+    AimHeld = false
+    AimToggleActive = false
+    ClearTarget()
+end
+
+------------------------------ Utilities
+CombatTab:CreateSection({ name = "Utilities" })
+
+CombatTab:CreateButton({
+    name = "Check Test Targets",
+    callback = function()
+        local Folder = GetTestFolder()
+
+        if not Folder then
+            Window:Notify({
+                title = "Koda Hub",
+                content = "Create workspace." .. TEST_FOLDER_NAME .. " and put NPC test dummies inside it.",
+            })
+            return
+        end
+
+        local Count = 0
+
+        for _, Object in ipairs(Folder:GetChildren()) do
+            if Object:IsA("Model") and Object:FindFirstChildOfClass("Humanoid") then
+                Count = Count + 1
+            end
+        end
+
+        Window:Notify({
+            title = "Test Targets",
+            content = tostring(Count) .. " NPC test dummy/dummies found.",
+        })
+    end,
+})
+
+CombatTab:CreateButton({
+    name = "Clear Current Target",
+    callback = function()
+        ClearTarget()
+        TargetMarker.Visible = false
+    end,
+})
+
+CombatTab:CreateButton({
+    name = "Reset Aim Settings",
+    callback = function()
+        ResetAimSettings()
+
+        Window:Notify({
+            title = "Koda Hub",
+            content = "Aim settings restored to defaults.",
+        })
+    end,
+})
+
+--==================================================
+-- ESP / CHAMS  (Visuals tab)
+--==================================================
+
+local ESPDefaults = {
+    Enabled = false,
+    Chams = true,
+    Names = true,
+    Distance = true,
+    Health = true,
+    TeamColors = true,      -- use each player's Roblox team color
+    ShowTeammates = false,
+    TargetPlayers = true,
+    TargetNPCs = true,      -- models inside workspace.AimTestTargets
+    VisibleOnly = false,    -- chams only show when not behind walls
+    MaxDistance = 1500,
+    TextSize = 13,
+    FillPercent = 50,       -- chams fill transparency (0 = solid, 100 = invisible)
+    OutlinePercent = 0,
+    EnemyColor = Color3.fromRGB(255, 75, 75),
+    TeamColor = Color3.fromRGB(80, 220, 120),
+    NPCColor = Color3.fromRGB(255, 200, 60),
+}
+
+local ESPSettings = {}
+
+for key, value in pairs(ESPDefaults) do
+    ESPSettings[key] = value
+end
+
+local ESPObjects = {} -- [Model] = { Highlight, Billboard, Label }
+local ESPCleaned = false
+
+local OldESPGui = PlayerGui:FindFirstChild("KodaESPGui")
+
+if OldESPGui then
+    OldESPGui:Destroy()
+end
+
+local OldESPFolder = Workspace:FindFirstChild("KodaESPChams")
+
+if OldESPFolder then
+    OldESPFolder:Destroy()
+end
+
+local ESPGui = Instance.new("ScreenGui")
+ESPGui.Name = "KodaESPGui"
+ESPGui.ResetOnSpawn = false
+ESPGui.DisplayOrder = 99
+ESPGui.Parent = PlayerGui
+
+local ESPHighlights = Instance.new("Folder")
+ESPHighlights.Name = "KodaESPChams"
+ESPHighlights.Parent = Workspace
+
+--------------------------------------------------
+-- helpers
+--------------------------------------------------
+
+local function GetESPCandidates()
+    local List = {}
+
+    if ESPSettings.TargetPlayers then
+        for _, Player in ipairs(Players:GetPlayers()) do
+            if Player ~= LocalPlayer and Player.Character then
+                table.insert(List, Player.Character)
+            end
+        end
+    end
+
+    if ESPSettings.TargetNPCs then
+        local Folder = GetTestFolder()
+
+        if Folder then
+            for _, Child in ipairs(Folder:GetChildren()) do
+                if Child:IsA("Model") then
+                    table.insert(List, Child)
+                end
+            end
+        end
+    end
+
+    return List
+end
+
+-- returns color, isTeammate
+local function GetESPColor(Model)
+    local Owner = Players:GetPlayerFromCharacter(Model)
+
+    if Owner then
+        local Teammate = LocalPlayer.Team ~= nil and Owner.Team == LocalPlayer.Team
+
+        if ESPSettings.TeamColors and Owner.Team then
+            return Owner.TeamColor.Color, Teammate
+        end
+
+        return Teammate and ESPSettings.TeamColor or ESPSettings.EnemyColor, Teammate
+    end
+
+    -- NPC: "Team" attribute or StringValue, same as the aimlock
+    local TargetTeam = Model:GetAttribute("Team")
+
+    if not TargetTeam then
+        local TeamValue = Model:FindFirstChild("Team")
+
+        if TeamValue and TeamValue:IsA("StringValue") then
+            TargetTeam = TeamValue.Value
+        end
+    end
+
+    local Teammate = LocalPlayer.Team ~= nil
+        and TargetTeam ~= nil
+        and tostring(TargetTeam) == LocalPlayer.Team.Name
+
+    return ESPSettings.NPCColor, Teammate
+end
+
+local function CreateESPEntry(Model)
+    local Highlight = Instance.new("Highlight")
+    Highlight.Name = "KodaChams"
+    Highlight.Adornee = Model
+    Highlight.Enabled = false
+    Highlight.Parent = ESPHighlights
+
+    local Billboard = Instance.new("BillboardGui")
+    Billboard.Name = "KodaESPLabel"
+    Billboard.AlwaysOnTop = true
+    Billboard.ResetOnSpawn = false
+    Billboard.Size = UDim2.fromOffset(220, 48)
+    Billboard.MaxDistance = math.huge
+    Billboard.Enabled = false
+    Billboard.Parent = ESPGui
+
+    local Label = Instance.new("TextLabel")
+    Label.BackgroundTransparency = 1
+    Label.Size = UDim2.fromScale(1, 1)
+    Label.Font = Enum.Font.GothamMedium
+    Label.TextStrokeTransparency = 0.4
+    Label.TextStrokeColor3 = Color3.new(0, 0, 0)
+    Label.TextYAlignment = Enum.TextYAlignment.Bottom
+    Label.Text = ""
+    Label.Parent = Billboard
+
+    return { Highlight = Highlight, Billboard = Billboard, Label = Label }
+end
+
+local function HideESPEntry(Entry)
+    Entry.Highlight.Enabled = false
+    Entry.Billboard.Enabled = false
+end
+
+local function DestroyESPEntry(Entry)
+    pcall(function()
+        Entry.Highlight:Destroy()
+    end)
+
+    pcall(function()
+        Entry.Billboard:Destroy()
+    end)
+end
+
+local function ClearAllESP()
+    for Model, Entry in pairs(ESPObjects) do
+        DestroyESPEntry(Entry)
+        ESPObjects[Model] = nil
+    end
+end
+
+local function UpdateESPEntry(Model, Entry, Origin)
+    local Humanoid = Model:FindFirstChildOfClass("Humanoid")
+    local Root = Model:FindFirstChild("HumanoidRootPart") or Model.PrimaryPart
+
+    if not Humanoid or Humanoid.Health <= 0 or not Root then
+        HideESPEntry(Entry)
+        return
+    end
+
+    local Dist = (Root.Position - Origin).Magnitude
+
+    if Dist > ESPSettings.MaxDistance then
+        HideESPEntry(Entry)
+        return
+    end
+
+    local Color, Teammate = GetESPColor(Model)
+
+    if Teammate and not ESPSettings.ShowTeammates then
+        HideESPEntry(Entry)
+        return
+    end
+
+    -- chams
+    local Highlight = Entry.Highlight
+    Highlight.Adornee = Model
+    Highlight.FillColor = Color
+    Highlight.OutlineColor = Color
+    Highlight.FillTransparency = ESPSettings.FillPercent / 100
+    Highlight.OutlineTransparency = ESPSettings.OutlinePercent / 100
+    Highlight.DepthMode = ESPSettings.VisibleOnly
+        and Enum.HighlightDepthMode.Occluded
+        or Enum.HighlightDepthMode.AlwaysOnTop
+    Highlight.Enabled = ESPSettings.Chams
+
+    -- text
+    local Lines = {}
+    local Owner = Players:GetPlayerFromCharacter(Model)
+
+    if ESPSettings.Names then
+        table.insert(Lines, Owner and Owner.DisplayName or Model.Name)
+    end
+
+    local Info = {}
+
+    if ESPSettings.Distance then
+        table.insert(Info, string.format("%d studs", Dist))
+    end
+
+    if ESPSettings.Health then
+        table.insert(Info, string.format("%d HP", math.max(0, math.floor(Humanoid.Health))))
+    end
+
+    if #Info > 0 then
+        table.insert(Lines, table.concat(Info, "  |  "))
+    end
+
+    if #Lines == 0 then
+        Entry.Billboard.Enabled = false
+        return
+    end
+
+    local Head = Model:FindFirstChild("Head")
+    Entry.Billboard.Adornee = Head or Root
+    Entry.Billboard.StudsOffset = Vector3.new(0, Head and 2.2 or 4.2, 0)
+
+    Entry.Label.Text = table.concat(Lines, "\n")
+    Entry.Label.TextColor3 = Color
+    Entry.Label.TextSize = ESPSettings.TextSize
+    Entry.Billboard.Enabled = true
+end
+
+local LastESPUpdate = 0
+
+local function UpdateESP()
+    if ESPCleaned then
+        return
+    end
+
+    local Now = os.clock()
+
+    if Now - LastESPUpdate < 1 / 30 then
+        return
+    end
+
+    LastESPUpdate = Now
+
+    if not ESPSettings.Enabled then
+        if next(ESPObjects) then
+            ClearAllESP()
+        end
+        return
+    end
+
+    local Origin = GetOrigin()
+
+    if not Origin then
+        return
+    end
+
+    local Seen = {}
+
+    for _, Model in ipairs(GetESPCandidates()) do
+        Seen[Model] = true
+
+        local Entry = ESPObjects[Model]
+
+        if not Entry then
+            Entry = CreateESPEntry(Model)
+            ESPObjects[Model] = Entry
+        end
+
+        UpdateESPEntry(Model, Entry, Origin)
+    end
+
+    -- drop entries for models that left, respawned, or got filtered out
+    for Model, Entry in pairs(ESPObjects) do
+        if not Seen[Model] or not Model.Parent then
+            DestroyESPEntry(Entry)
+            ESPObjects[Model] = nil
+        end
+    end
+end
+
+table.insert(Connections, RunService.Heartbeat:Connect(UpdateESP))
+
+ESPCleanup = function()
+    ESPCleaned = true
+    ClearAllESP()
+
+    pcall(function()
+        ESPGui:Destroy()
+    end)
+
+    pcall(function()
+        ESPHighlights:Destroy()
+    end)
+end
+
+--------------------------------------------------
+-- UI
+--------------------------------------------------
+
+local ESPControls = {}
+
+local function ESPToggle(Key, Name, Description, DontSave)
+    ESPControls[Key] = VisualsTab:CreateToggle({
+        name = Name,
+        description = Description,
+        flag = "ESP_" .. Key,
+        value = ESPSettings[Key],
+        forgetState = DontSave == true,
+
+        callback = function(Value)
+            local Changed = Value ~= ESPSettings[Key]
+            ESPSettings[Key] = Value
+
+            if Key == "Enabled" and Changed then
+                Toast("ESP", Value and "Enabled" or "Disabled")
+            end
+        end,
+    })
+end
+
+local function ESPSlider(Key, Name, Range, Increment, Suffix)
+    ESPControls[Key] = VisualsTab:CreateSlider({
+        name = Name,
+        flag = "ESP_" .. Key,
+        range = Range,
+        increment = Increment,
+        suffix = Suffix,
+        value = ESPSettings[Key],
+
+        callback = function(Value)
+            ESPSettings[Key] = Value
+        end,
+    })
+end
+
+local function ESPColorPicker(Key, Name)
+    ESPControls[Key] = VisualsTab:CreateColorPicker({
+        name = Name,
+        flag = "ESP_" .. Key,
+        color = ESPSettings[Key],
+
+        callback = function(Color)
+            ESPSettings[Key] = Color
+        end,
+    })
+end
+
+VisualsTab:CreateSection({ name = "ESP" })
+ESPToggle("Enabled", "Enable ESP", "Master switch for chams and the text labels.", true)
+ESPToggle("Chams", "Chams", "Colored highlight over the whole character.")
+ESPToggle("Names", "Names")
+ESPToggle("Distance", "Distance", "Shows how far away the target is, in studs.")
+ESPToggle("Health", "Health")
+
+VisualsTab:CreateSection({ name = "Targets" })
+ESPToggle("TargetPlayers", "Show Players")
+ESPToggle("TargetNPCs", "Show NPC Dummies", "Models inside workspace." .. TEST_FOLDER_NAME .. ".")
+ESPToggle("ShowTeammates", "Show Teammates")
+ESPToggle("TeamColors", "Team Colors", "Use each player's team color. Off = enemy/teammate colors below.")
+ESPSlider("MaxDistance", "ESP Maximum Distance", { 100, 5000 }, 50, " studs")
+
+VisualsTab:CreateSection({ name = "Appearance" })
+ESPToggle("VisibleOnly", "Chams Visible Only", "Off = chams show through walls.")
+ESPSlider("FillPercent", "Chams Fill Transparency", { 0, 100 }, 5, "%")
+ESPSlider("OutlinePercent", "Chams Outline Transparency", { 0, 100 }, 5, "%")
+ESPSlider("TextSize", "Text Size", { 10, 24 }, 1, "px")
+
+VisualsTab:CreateSection({ name = "Colors" })
+ESPColorPicker("EnemyColor", "Enemy Color")
+ESPColorPicker("TeamColor", "Teammate Color")
+ESPColorPicker("NPCColor", "NPC Color")
+
+local function ResetESPSettings()
+    for Key, Control in pairs(ESPControls) do
+        Control:Set(ESPDefaults[Key])
+        ESPSettings[Key] = ESPDefaults[Key]
+    end
+end
+
+VisualsTab:CreateSection({ name = "Utilities" })
+
+VisualsTab:CreateButton({
+    name = "Reset ESP Settings",
+    callback = function()
+        ResetESPSettings()
+
+        Window:Notify({
+            title = "Koda Hub",
+            content = "ESP settings restored to defaults.",
+        })
+    end,
+})
+
+--==================================================
+-- PLAYER TAB  (speed, flight, noclip, third person)
+--==================================================
+
+local PlayerCleanup
+local ResetPlayerSettings
+
+do
+    local PlayerDefaults = {
+        Speed = false,
+        WalkSpeed = 32,
+        Fly = false,
+        FlySpeed = 60,
+        Noclip = false,
+        ThirdPerson = false,
+        CameraDistance = 15,
+        ScrollZoom = true,
+        FlyKey = Enum.KeyCode.F,
+        NoclipKey = Enum.KeyCode.N,
+        ThirdPersonKey = Enum.KeyCode.V,
+    }
+
+    local PlayerSettings = {}
+
+    for key, value in pairs(PlayerDefaults) do
+        PlayerSettings[key] = value
+    end
+
+    local PlayerControls = {}
+    local PlayerCleaned = false
+
+    local SavedWalkSpeed = nil
+    local FlyMover = nil          -- { Velocity, Gyro, Root }
+    local NoclipParts = {}        -- parts we switched CanCollide off on
+    local SavedCamera = nil       -- { Mode, Min, Max }
+    local PendingZoom = true      -- snap the camera to the chosen distance once
+
+    local function GetHumanoid()
+        local Character = LocalPlayer.Character
+        return Character and Character:FindFirstChildOfClass("Humanoid")
+    end
+
+    local function GetRoot()
+        local Character = LocalPlayer.Character
+        return Character and Character:FindFirstChild("HumanoidRootPart")
+    end
+
+    local function Down(Key)
+        return UserInputService:IsKeyDown(Key)
+    end
+
+    ------------------------------ Speed
+    -- Re-applied every frame because many games keep resetting WalkSpeed.
+    local function UpdateSpeed()
+        local Humanoid = GetHumanoid()
+
+        if not Humanoid then
+            return
+        end
+
+        if PlayerSettings.Speed then
+            if SavedWalkSpeed == nil then
+                SavedWalkSpeed = Humanoid.WalkSpeed
+            end
+
+            Humanoid.WalkSpeed = PlayerSettings.WalkSpeed
+        elseif SavedWalkSpeed ~= nil then
+            Humanoid.WalkSpeed = SavedWalkSpeed
+            SavedWalkSpeed = nil
+        end
+    end
+
+    ------------------------------ Flight
+    local function StopFly()
+        if FlyMover then
+            pcall(function()
+                FlyMover.Velocity:Destroy()
+            end)
+
+            pcall(function()
+                FlyMover.Gyro:Destroy()
+            end)
+
+            FlyMover = nil
+        end
+
+        local Humanoid = GetHumanoid()
+
+        if Humanoid then
+            Humanoid.PlatformStand = false
+        end
+    end
+
+    -- WASD to move relative to the camera, Space / E to go up, Left Ctrl / Q to go down.
+    local function UpdateFly()
+        if not PlayerSettings.Fly then
+            if FlyMover then
+                StopFly()
+            end
+
+            return
+        end
+
+        local Root = GetRoot()
+        local Humanoid = GetHumanoid()
+        local Camera = Workspace.CurrentCamera
+
+        if not Root or not Humanoid or not Camera or Humanoid.Health <= 0 then
+            return
+        end
+
+        -- (re)build the movers after a respawn
+        if not FlyMover or FlyMover.Root ~= Root or not FlyMover.Velocity.Parent then
+            if FlyMover then
+                StopFly()
+            end
+
+            local Velocity = Instance.new("BodyVelocity")
+            Velocity.Name = "KodaFlyVelocity"
+            Velocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+            Velocity.Velocity = Vector3.new(0, 0, 0)
+            Velocity.Parent = Root
+
+            local Gyro = Instance.new("BodyGyro")
+            Gyro.Name = "KodaFlyGyro"
+            Gyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+            Gyro.P = 9e4
+            Gyro.CFrame = Root.CFrame
+            Gyro.Parent = Root
+
+            FlyMover = { Velocity = Velocity, Gyro = Gyro, Root = Root }
+        end
+
+        Humanoid.PlatformStand = true
+
+        local CameraCFrame = Camera.CFrame
+        local Direction = Vector3.new(0, 0, 0)
+
+        if not UserInputService:GetFocusedTextBox() then
+            if Down(Enum.KeyCode.W) then
+                Direction = Direction + CameraCFrame.LookVector
+            end
+
+            if Down(Enum.KeyCode.S) then
+                Direction = Direction - CameraCFrame.LookVector
+            end
+
+            if Down(Enum.KeyCode.D) then
+                Direction = Direction + CameraCFrame.RightVector
+            end
+
+            if Down(Enum.KeyCode.A) then
+                Direction = Direction - CameraCFrame.RightVector
+            end
+
+            if Down(Enum.KeyCode.Space) or Down(Enum.KeyCode.E) then
+                Direction = Direction + Vector3.new(0, 1, 0)
+            end
+
+            if Down(Enum.KeyCode.LeftControl) or Down(Enum.KeyCode.Q) then
+                Direction = Direction - Vector3.new(0, 1, 0)
+            end
+        end
+
+        if Direction.Magnitude > 0 then
+            Direction = Direction.Unit * PlayerSettings.FlySpeed
+        end
+
+        FlyMover.Velocity.Velocity = Direction
+        FlyMover.Gyro.CFrame = CFrame.lookAt(Root.Position, Root.Position + CameraCFrame.LookVector)
+    end
+
+    ------------------------------ Noclip
+    local function RestoreNoclip()
+        for Part in pairs(NoclipParts) do
+            if Part.Parent then
+                Part.CanCollide = true
+            end
+
+            NoclipParts[Part] = nil
+        end
+    end
+
+    -- Runs on Stepped so it lands before physics each frame.
+    local function UpdateNoclip()
+        if not PlayerSettings.Noclip then
+            if next(NoclipParts) then
+                RestoreNoclip()
+            end
+
+            return
+        end
+
+        local Character = LocalPlayer.Character
+
+        if not Character then
+            return
+        end
+
+        for _, Part in ipairs(Character:GetDescendants()) do
+            if Part:IsA("BasePart") and Part.CanCollide then
+                NoclipParts[Part] = true
+                Part.CanCollide = false
+            end
+        end
+    end
+
+    ------------------------------ Third person
+    local function UpdateCamera()
+        if PlayerSettings.ThirdPerson then
+            if not SavedCamera then
+                SavedCamera = {
+                    Mode = LocalPlayer.CameraMode,
+                    Min = LocalPlayer.CameraMinZoomDistance,
+                    Max = LocalPlayer.CameraMaxZoomDistance,
+                }
+            end
+
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+
+            if PendingZoom or not PlayerSettings.ScrollZoom then
+                -- pin min = max = distance so the camera snaps out of first person
+                LocalPlayer.CameraMinZoomDistance = PlayerSettings.CameraDistance
+                LocalPlayer.CameraMaxZoomDistance = PlayerSettings.CameraDistance
+                PendingZoom = false
+            else
+                -- then let the player scroll freely
+                LocalPlayer.CameraMinZoomDistance = 0.5
+                LocalPlayer.CameraMaxZoomDistance = math.max(400, PlayerSettings.CameraDistance)
+            end
+        elseif SavedCamera then
+            LocalPlayer.CameraMode = SavedCamera.Mode
+            LocalPlayer.CameraMinZoomDistance = SavedCamera.Min
+            LocalPlayer.CameraMaxZoomDistance = SavedCamera.Max
+            SavedCamera = nil
+        end
+    end
+
+    ------------------------------ Loops
+    table.insert(Connections, RunService.Heartbeat:Connect(function()
+        if PlayerCleaned then
+            return
+        end
+
+        UpdateSpeed()
+        UpdateFly()
+        UpdateCamera()
+    end))
+
+    table.insert(Connections, RunService.Stepped:Connect(function()
+        if not PlayerCleaned then
+            UpdateNoclip()
+        end
+    end))
+
+    -- Puts everything back the way the game had it (called from Cleanup).
+    PlayerCleanup = function()
+        PlayerCleaned = true
+
+        PlayerSettings.Speed = false
+        PlayerSettings.Fly = false
+        PlayerSettings.Noclip = false
+        PlayerSettings.ThirdPerson = false
+
+        pcall(UpdateSpeed)
+        pcall(StopFly)
+        pcall(RestoreNoclip)
+        pcall(UpdateCamera)
+    end
+
+    ------------------------------ UI
+    local function PlayerToggle(Key, Name, Description, DontSave, Announce)
+        PlayerControls[Key] = PlayerTab:CreateToggle({
+            name = Name,
+            description = Description,
+            flag = "Player_" .. Key,
+            value = PlayerSettings[Key],
+            forgetState = DontSave == true,
+
+            callback = function(Value)
+                local Changed = Value ~= PlayerSettings[Key]
+                PlayerSettings[Key] = Value
+
+                if Key == "ThirdPerson" or Key == "ScrollZoom" then
+                    PendingZoom = true
+                end
+
+                if Changed and Announce then
+                    Toast(Announce, Value and "Enabled" or "Disabled")
+                end
+            end,
+        })
+    end
+
+    local function PlayerSlider(Key, Name, Description, Range, Increment, Suffix)
+        PlayerControls[Key] = PlayerTab:CreateSlider({
+            name = Name,
+            description = Description,
+            flag = "Player_" .. Key,
+            range = Range,
+            increment = Increment,
+            suffix = Suffix,
+            value = PlayerSettings[Key],
+
+            callback = function(Value)
+                PlayerSettings[Key] = Value
+
+                if Key == "CameraDistance" then
+                    PendingZoom = true
+                end
+            end,
+        })
+    end
+
+    -- A keybind that flips one of the toggles above.
+    local function PlayerKeybind(Key, Name, TargetToggle)
+        PlayerControls[Key] = PlayerTab:CreateKeybind({
+            name = Name,
+            flag = "Player_" .. Key,
+            value = PlayerSettings[Key],
+
+            callback = function()
+                local Control = PlayerControls[TargetToggle]
+
+                if Control then
+                    Control:Set(not PlayerSettings[TargetToggle])
+                end
+            end,
+
+            onChanged = function(NewKey)
+                PlayerSettings[Key] = NewKey
+            end,
+        })
+    end
+
+    PlayerTab:CreateSection({ name = "Movement" })
+    PlayerToggle("Speed", "Speed Boost", "Overrides your WalkSpeed. Always starts off.", true, "Speed")
+    PlayerSlider("WalkSpeed", "Walk Speed", "Default Roblox speed is 16.", { 16, 250 }, 1, "")
+    PlayerToggle("Fly", "Flight", "WASD to move, Space / E up, Left Ctrl / Q down. Always starts off.", true, "Flight")
+    PlayerSlider("FlySpeed", "Flight Speed", nil, { 10, 300 }, 5, "")
+    PlayerToggle("Noclip", "Noclip", "Walk through walls. Turn on Flight too, or you will fall through the floor.", true, "Noclip")
+
+    PlayerTab:CreateSection({ name = "Camera" })
+    PlayerToggle("ThirdPerson", "Third Person", "Forces the normal chase camera, even in first-person games.", false, "Third Person")
+    PlayerSlider("CameraDistance", "Camera Distance", "How far behind you the camera sits.", { 5, 100 }, 1, " studs")
+    PlayerToggle("ScrollZoom", "Allow Scroll Zoom", "On: scroll to zoom after the camera snaps out. Off: distance is locked.")
+
+    PlayerTab:CreateSection({ name = "Keybinds" })
+    PlayerKeybind("FlyKey", "Flight Key", "Fly")
+    PlayerKeybind("NoclipKey", "Noclip Key", "Noclip")
+    PlayerKeybind("ThirdPersonKey", "Third Person Key", "ThirdPerson")
+
+    ResetPlayerSettings = function()
+        for Key, Control in pairs(PlayerControls) do
+            Control:Set(PlayerDefaults[Key])
+            PlayerSettings[Key] = PlayerDefaults[Key]
+        end
+    end
+
+    PlayerTab:CreateSection({ name = "Utilities" })
+
+    PlayerTab:CreateButton({
+        name = "Reset Player Settings",
+        callback = function()
+            ResetPlayerSettings()
+
+            Window:Notify({
+                title = "Koda Hub",
+                content = "Player settings restored to defaults.",
+            })
+        end,
+    })
+end
+
+--==================================================
+-- CLEANUP
+--==================================================
+
+local Cleaned = false
+
+Cleanup = function()
+    if Cleaned then
+        return
+    end
+
+    Cleaned = true
+
+    pcall(function()
+        RunService:UnbindFromRenderStep(BIND_NAME)
+    end)
+
+    for _, Connection in ipairs(Connections) do
+        pcall(function()
+            Connection:Disconnect()
+        end)
+    end
+
+    table.clear(Connections)
+
+    pcall(ESPCleanup)
+    pcall(PlayerCleanup)
+
+    if Overlay then
+        Overlay:Destroy()
+    end
+
+    if not Window.unloaded then
+        pcall(function()
+            Window:Unload()
+        end)
+    end
+end
+
+Env.KodaHubCleanup = Cleanup
+
+--==================================================
+-- SETTINGS TAB  (the menu itself, not combat / ESP)
+--==================================================
+
+local function Confirm(Title, Content, ButtonText, OnConfirm)
+    pcall(function()
+        Window:Popup({
+            title = Title,
+            content = Content,
+            options = {
+                { text = "Cancel" },
+                { text = ButtonText, style = "danger", callback = OnConfirm },
+            },
+        })
+    end)
+end
+
+local function Unwrap(Value)
+    if type(Value) == "table" then
+        return Value[1]
+    end
+
+    return Value
+end
+
+------------------------------ Appearance
+SettingsTab:CreateSection({ name = "Appearance" })
+
+SettingsTab:CreateDropdown({
+    name = "Theme",
+    description = "Restyles the whole menu live.",
+    flag = "MenuTheme",
+    options = { "Default", "Cobalt", "Ember", "Amethyst", "Frost", "Rose" },
+    value = "Cobalt",
+
+    callback = function(Value)
+        local Name = Unwrap(Value)
+
+        if type(Name) == "string" then
+            pcall(function()
+                Window:ChangeTheme(string.lower(Name))
+            end)
+        end
+    end,
+})
+
+local LANGUAGE_IDS = {
+    English = "en",
+    ["Español"] = "es",
+    ["Français"] = "fr",
+    Deutsch = "de",
+}
+
+SettingsTab:CreateDropdown({
+    name = "Language",
+    description = "Translates the menu labels live.",
+    flag = "MenuLanguage",
+    options = { "English", "Español", "Français", "Deutsch" },
+    value = "English",
+
+    callback = function(Value)
+        local Id = LANGUAGE_IDS[Unwrap(Value)]
+
+        if Id then
+            pcall(function()
+                Window:SetLocale(Id)
+            end)
+        end
+    end,
+})
+
+------------------------------ Menu
+SettingsTab:CreateSection({ name = "Menu" })
+
+SettingsTab:CreateKeybind({
+    name = "Menu Toggle Key",
+    description = "Shows or hides the menu.",
+    flag = "MenuToggleKey",
+    value = Enum.KeyCode.RightControl,
+
+    callback = function()
+        Window:ToggleHide()
+    end,
+})
+
+SettingsTab:CreateToggle({
+    name = "Toast Notifications",
+    description = "Small pop-ups when you switch the aimlock or ESP on and off.",
+    flag = "MenuToasts",
+    value = MenuSettings.Toasts,
+
+    callback = function(Value)
+        MenuSettings.Toasts = Value
+    end,
+})
+
+SettingsTab:CreateButton({
+    name = "Test Notification",
+    callback = function()
+        Window:Notify({
+            title = "Koda Hub",
+            content = "This is what a notification looks like.",
+            duration = 4,
+        })
+
+        pcall(function()
+            Window:Toast({ title = "Koda Hub", subtitle = "And this is a toast.", duration = 3 })
+        end)
+    end,
+})
+
+------------------------------ Configuration
+SettingsTab:CreateSection({ name = "Configuration" })
+
+SettingsTab:CreateText({
+    name = "Auto-save is on",
+    text = "Every setting saves as you change it and loads next time. The master Aimlock and ESP switches always start off.",
+})
+
+SettingsTab:CreateButton({
+    name = "Save Config",
+    callback = function()
+        local Ok, Result = pcall(function()
+            return Window:Save()
+        end)
+
+        if Ok and Result ~= false then
+            Toast("Config", "Saved")
+        else
+            Window:Notify({ title = "Koda Hub", content = "Could not save. Does your executor support file writing?" })
+        end
+    end,
+})
+
+SettingsTab:CreateButton({
+    name = "Load Config",
+    callback = function()
+        local Ok, Result = pcall(function()
+            return Window:Load()
+        end)
+
+        if Ok and Result ~= false then
+            Toast("Config", "Loaded")
+        else
+            Window:Notify({ title = "Koda Hub", content = "No saved config found yet." })
+        end
+    end,
+})
+
+------------------------------ Danger zone
+SettingsTab:CreateSection({ name = "Danger Zone" })
+
+SettingsTab:CreateButton({
+    name = "Reset Combat & Visuals",
+    callback = function()
+        Confirm(
+            "Reset everything?",
+            "This puts every Combat and Visuals setting back to its default.",
+            "Reset",
+            function()
+                ResetAimSettings()
+                ResetESPSettings()
+                ResetPlayerSettings()
+                Toast("Koda Hub", "Settings reset")
+            end
+        )
+    end,
+})
+
+SettingsTab:CreateButton({
+    name = "Unload Script",
+    callback = function()
+        Confirm(
+            "Unload Koda Hub?",
+            "This removes the menu, the ESP and the aimlock. Run the script again to bring it back.",
+            "Unload",
+            function()
+                Cleanup()
+            end
+        )
+    end,
+})
+
+------------------------------ About
+SettingsTab:CreateSection({ name = "About" })
+
+SettingsTab:CreateText({
+    name = "Koda Hub " .. UPDATE.version,
+    text = "Built on Rayfield Gen2. Updated " .. UPDATE.date .. ".",
+})
+
+--==================================================
+-- LIVE UPDATE LOOP
+--==================================================
+
+local function UpdateTarget(Active)
+    if not AimSettings.Enabled then
+        ClearTarget()
+        return
+    end
+
+    -- Sticky lock: keep the current target while the key is down.
+    if Active and AimSettings.StickyLock and TargetLocked and CurrentTarget then
+        local Part = ValidateLockedTarget(CurrentTarget)
+
+        if Part then
+            CurrentTargetPart = Part
+            return
+        end
+
+        ClearTarget()
+    end
+
+    -- Otherwise pick the closest target to the cursor. Before the key is
+    -- pressed this is only a preview; once active it becomes the lock.
+    CurrentTarget, CurrentTargetPart = GetClosestTarget()
+    TargetLocked = Active and CurrentTarget ~= nil
+end
+
+local function UpdateVisuals(MousePosition)
+    FOVCircle.Position = UDim2.fromOffset(MousePosition.X, MousePosition.Y)
+    FOVCircle.Size = UDim2.fromOffset(AimSettings.FOV * 2, AimSettings.FOV * 2)
+    FOVCircle.Visible = AimSettings.ShowFOV and AimSettings.Enabled
+
+    if CurrentTarget and CurrentTargetPart and AimSettings.ShowTarget then
+        local ScreenPosition, OnScreen = GetScreenPosition(CurrentTargetPart)
+
+        if OnScreen and ScreenPosition then
+            TargetMarker.Position = UDim2.fromOffset(ScreenPosition.X, ScreenPosition.Y)
+            MarkerStroke.Color = TargetLocked and LOCKED_COLOR or PREVIEW_COLOR
+
+            local Owner = Players:GetPlayerFromCharacter(CurrentTarget)
+            TargetName.Text = Owner and Owner.DisplayName or CurrentTarget.Name
+            TargetName.Visible = AimSettings.ShowTargetName
+
+            TargetMarker.Visible = true
+            return
+        end
+    end
+
+    TargetMarker.Visible = false
+    TargetName.Visible = false
+end
+
+local function OnRenderStep(DeltaTime)
+    if Window.unloaded then
+        Cleanup()
+        return
+    end
+
+    local Active = IsAimActive()
+
+    UpdateTarget(Active)
+    UpdateVisuals(UserInputService:GetMouseLocation())
+
+    -- header status pill: Idle (aimlock off) / Ready (on) / Locked (on a target)
+    if not AimSettings.Enabled then
+        SetStatus("Idle")
+    elseif Active and TargetLocked then
+        SetStatus("Locked")
+    else
+        SetStatus("Ready")
+    end
+
+    if not (Active and CurrentTarget and CurrentTargetPart) then
+        return
+    end
+
+    local Camera = Workspace.CurrentCamera
+
+    if not Camera then
+        return
+    end
+
+    local Strength = math.clamp(AimSettings.LockStrength / 100, 0.01, 1)
+    local Goal = CFrame.lookAt(Camera.CFrame.Position, CurrentTargetPart.Position)
+
+    if Strength >= 1 then
+        -- hard lock: snap straight onto the target
+        Camera.CFrame = Goal
+    else
+        -- frame-rate independent smoothing (same feel at 30 / 60 / 144 FPS)
+        local Alpha = 1 - (1 - Strength) ^ (math.min(DeltaTime, 0.1) * 60)
+
+        Camera.CFrame = Camera.CFrame:Lerp(Goal, Alpha)
+    end
+end
+
+-- Bound just after the default camera so our CFrame is the last word each frame.
+pcall(function()
+    RunService:UnbindFromRenderStep(BIND_NAME)
+end)
+
+RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Camera.Value + 1, OnRenderStep)
+
+HomeTab:Select(true)
+
+Window:Notify({
+    title = "Koda Hub " .. UPDATE.version,
+    content = "Loaded. Hold your aim key to lock on. Press Right Ctrl to hide the menu.",
+})
